@@ -5,12 +5,14 @@ namespace grSavTool
 {
     class Program
     {
+        private const int version = 6;
+
         static void Main(string[] args)
         {
             //args = new string[3];
-            //args[0] = "pack";
-            //args[1] = @"D:\out.dat";
-            //args[2] = @"D:\quicksave.sav";
+            //args[0] = "unpack";
+            //args[1] = @"D:\o_quicksave.sav";
+            //args[2] = @"D:\tmp.dat";
 
             var arguments = ParseArguments(args);
             if (arguments.IsValid)
@@ -24,21 +26,15 @@ namespace grSavTool
                             savFileReader.BaseStream.Seek(0, SeekOrigin.Begin);
                             var s = new MemoryStream();
                             var header = savFileReader.ReadChars(4); // GRIM
-                            var unknown = savFileReader.ReadInt32(); // ???
+                            var version = savFileReader.ReadInt32(); // ???
                             var uncompressedSizeData = savFileReader.ReadBytes(4);
                             var uncompressedSize = BitConverter.ToInt32(uncompressedSizeData, 0);
                             const int HeaderLength = 12;
                             var bytes = savFileReader.ReadBytes((int)savFileReader.BaseStream.Length - HeaderLength);
-                            using (var m = new MemoryStream())
+                            using (FileStream datFile = new FileStream(arguments.OutputFile, FileMode.Create))
                             {
-                                m.Write(Ionic.Zlib.ZlibStream.UncompressBuffer(bytes), 0, uncompressedSize);
-                                m.Position = 0;
-                                using (FileStream datFile = new FileStream(arguments.OutputFile, FileMode.Create))
-                                {
-                                    m.CopyTo(datFile);
-                                    datFile.Flush();
-                                    datFile.Close();
-                                }
+                                datFile.Write(Ionic.Zlib.ZlibStream.UncompressBuffer(bytes), 0, uncompressedSize);
+                                datFile.Close();
                             }
                         }
                     }
@@ -51,25 +47,16 @@ namespace grSavTool
                         using (BinaryReader datFileReader = new BinaryReader(datFileStream))
                         {
                             var bytes = datFileReader.ReadBytes((int)datFileReader.BaseStream.Length);
-                            using (var m = new MemoryStream())
+                            bytes = Ionic.Zlib.ZlibStream.CompressBuffer(bytes);
+                            using (FileStream savFile = new FileStream(arguments.OutputFile, FileMode.Create))
                             {
-                                bytes = Ionic.Zlib.ZlibStream.CompressBuffer(bytes);
-                                m.Write(bytes, 0, bytes.Length);
-                                m.Position = 0;
-                                using (FileStream savFile = new FileStream(arguments.OutputFile, FileMode.Create))
-                                {
-                                    savFile.WriteByte((byte)'G');
-                                    savFile.WriteByte((byte)'R');
-                                    savFile.WriteByte((byte)'I');
-                                    savFile.WriteByte((byte)'M');
-                                    savFile.Write(BitConverter.GetBytes((Int32)6), 0, 4); //TODO: document the '6'
-                                    var uncompressSize = datFileReader.BaseStream.Length;
-                                    var uncompressedSizeData = BitConverter.GetBytes((int)uncompressSize);
-                                    savFile.Write(uncompressedSizeData, 0, uncompressedSizeData.Length);
-                                    m.CopyTo(savFile);
-                                    savFile.Flush();
-                                    savFile.Close();
-                                }
+                                savFile.Write(new byte[4] { (byte)'G', (byte)'R', (byte)'I', (byte)'M' }, 0, 4); // GRIM
+                                savFile.Write(BitConverter.GetBytes(version), 0, 4);
+                                var uncompressSize = datFileReader.BaseStream.Length;
+                                var uncompressedSizeData = BitConverter.GetBytes((int)uncompressSize);
+                                savFile.Write(uncompressedSizeData, 0, uncompressedSizeData.Length);
+                                savFile.Write(bytes, 0, bytes.Length);
+                                savFile.Close();
                             }
                         }
                     }
